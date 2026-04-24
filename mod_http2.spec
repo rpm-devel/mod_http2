@@ -2,10 +2,9 @@
 %{!?_httpd_mmn: %global _httpd_mmn %(cat %{_includedir}/httpd/.mmn 2>/dev/null || echo 0-0)}
 
 Name:		mod_http2
-Version:	1.10.12
-Release:	1%{dist}
+Version:	2.0.39
+Release:	1%{?dist}
 Summary:	module implementing HTTP/2 for Apache 2
-Group:		System Environment/Daemons
 License:	ASL 2.0
 URL:		https://icing.github.io/mod_h2/
 Source0:	https://github.com/icing/mod_h2/releases/download/v%{version}/mod_http2-%{version}.tar.gz
@@ -53,6 +52,10 @@ make check
 %{_httpd_moddir}/mod_proxy_http2.so
 
 %changelog
+* Fri Apr 24 2026 CasjaysDev <rpm-devel@casjaysdev.pro> - 2.0.39-1
+- Update to 2.0.39
+- Modernize spec for EL10
+
 * Fri Oct 20 2017 Joe Orton <jorton@redhat.com> - 1.10.12-1
 - update to 1.10.12
 
