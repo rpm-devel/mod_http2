@@ -2,11 +2,12 @@
 %{!?_httpd_mmn: %global _httpd_mmn %(cat %{_includedir}/httpd/.mmn 2>/dev/null || echo 0-0)}
 
 Name:		mod_http2
-Version:	2.0.39
+Version:	2.0.42
 Release:	1%{?dist}
 Summary:	module implementing HTTP/2 for Apache 2
-License:	ASL 2.0
+License:	Apache-2.0
 URL:		https://icing.github.io/mod_h2/
+ExclusiveArch:	x86_64 aarch64
 Source0:	https://github.com/icing/mod_h2/releases/download/v%{version}/mod_http2-%{version}.tar.gz
 BuildRequires:	pkgconfig, httpd-devel >= 2.4.20, libnghttp2-devel >= 1.7.0
 Requires:	httpd-mmn = %{_httpd_mmn}, libnghttp2 >= 1.21.1
@@ -17,16 +18,13 @@ The mod_h2 Apache httpd module implements the HTTP2 protocol (h2+h2c) on
 top of libnghttp2 for httpd 2.4 servers.
 
 %prep
-%setup -q
+%autosetup -p1
 
 %build
-#CFLAGS="$CFLAGS -I/root/openssl-1.1.0g/include" LDFLAGS=-L/root/openssl-1.1.0g \
-#CXXFLAGS="$CXXFLAGS -I/root/openssl-1.1.0g/include" LDFLAGS=-L/root/openssl-1.1.0g \
-#CPPFLAGS="$CPPFLAGS -I/root/openssl-1.1.0g/include" LDFLAGS=-L/root/openssl-1.1.0g %configure
-make %{?_smp_mflags} V=1
+%make_build V=1
 
 %install
-make DESTDIR=%{buildroot} install
+%make_install
 rm -rf %{buildroot}/etc/httpd/share/doc/
 
 # remove links and rename SO files
@@ -52,6 +50,14 @@ make check
 %{_httpd_moddir}/mod_proxy_http2.so
 
 %changelog
+* Sat Jul 05 2026 CasjaysDev <rpm-devel@casjaysdev.pro> - 2.0.42-1
+- Update to 2.0.42 (Source0 verified 302→200)
+- Remove stale commented-out OpenSSL path hacks from %%build
+
+* Thu Jul 03 2026 CasjaysDev <rpm-devel@casjaysdev.pro> - 2.0.39-1
+- SPDX: ASL 2.0 → Apache-2.0; add ExclusiveArch: x86_64 aarch64
+- %%autosetup -p1, %%make_build V=1, %%make_install
+
 * Fri Apr 24 2026 CasjaysDev <rpm-devel@casjaysdev.pro> - 2.0.39-1
 - Update to 2.0.39
 - Modernize spec for EL10
