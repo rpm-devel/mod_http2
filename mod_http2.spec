@@ -1,3 +1,18 @@
+# SUSE/openSUSE ship the Apache HTTP Server dev package as apache2-devel
+# (providing httpd) instead of RHEL/Fedora's httpd-devel (providing httpd).
+# NOTE: apache2-devel does not provide the %%{_httpd_moddir}/%%{_httpd_modconfdir}/
+# %%{_httpd_mmn} RPM macros used below (those come only from httpd-devel's
+# macros.httpd) -- this spec's %%install/%%files still require RHEL/Fedora's
+# httpd-devel macro namespace to build; the guard below only fixes package
+# naming for BuildRequires/Requires/Conflicts.
+%if 0%{?suse_version}
+%global httpd_devel_pkg apache2-devel
+%global httpd_pkg apache2
+%else
+%global httpd_devel_pkg httpd-devel
+%global httpd_pkg httpd
+%endif
+
 # Module Magic Number
 %{!?_httpd_mmn: %global _httpd_mmn %(cat %{_includedir}/httpd/.mmn 2>/dev/null || echo 0-0)}
 
@@ -9,9 +24,9 @@ License:	Apache-2.0
 URL:		https://icing.github.io/mod_h2/
 ExclusiveArch:	x86_64 aarch64
 Source0:	https://github.com/icing/mod_h2/releases/download/v%{version}/mod_http2-%{version}.tar.gz
-BuildRequires:	pkgconfig, httpd-devel >= 2.4.20, libnghttp2-devel >= 1.7.0
+BuildRequires:	pkgconfig, %{httpd_devel_pkg} >= 2.4.20, libnghttp2-devel >= 1.7.0
 Requires:	httpd-mmn = %{_httpd_mmn}, libnghttp2 >= 1.21.1
-Conflicts:      httpd < 2.4.25-8
+Conflicts:      %{httpd_pkg} < 2.4.25-8
 
 %description
 The mod_h2 Apache httpd module implements the HTTP2 protocol (h2+h2c) on
@@ -51,6 +66,17 @@ make check
 
 %changelog
 * Sat Jul 05 2026 CasjaysDev <rpm-devel@casjaysdev.pro> - 2.0.42-1
+- Multi-distro pass: guard httpd-devel/apache2-devel and httpd/apache2
+  (BuildRequires, Conflicts) behind 0%%{?suse_version} for openSUSE/SLES;
+  RHEL/CentOS 7+, Alma/Rocky/Oracle 8+, Fedora 40+ keep httpd-devel/httpd
+- ExclusiveArch already present, no noarch/BuildArch lines found; verified
+  libnghttp2-devel is the correct package name on both Fedora and openSUSE
+  (no divergence, left unguarded)
+- NOTE: %%install/%%files still rely on %%{_httpd_moddir}/%%{_httpd_modconfdir}/
+  %%{_httpd_mmn} macros, which only httpd-devel's macros.httpd provides;
+  openSUSE's apache2-devel uses a different macro namespace (%%apache_*), so
+  this package still will not fully build on SUSE without a macro rewrite
+  beyond this pass's scope
 - Update to 2.0.42 (Source0 verified 302→200)
 - Remove stale commented-out OpenSSL path hacks from %%build
 
