@@ -8,9 +8,11 @@
 %if 0%{?suse_version}
 %global httpd_devel_pkg apache2-devel
 %global httpd_pkg apache2
+%global openssl_devel_pkg libopenssl-devel
 %else
 %global httpd_devel_pkg httpd-devel
 %global httpd_pkg httpd
+%global openssl_devel_pkg openssl-devel
 %endif
 
 # Module Magic Number
@@ -24,7 +26,13 @@ License:	Apache-2.0
 URL:		https://icing.github.io/mod_h2/
 ExclusiveArch:	x86_64 aarch64
 Source0:	https://github.com/icing/mod_h2/releases/download/v%{version}/mod_http2-%{version}.tar.gz
-BuildRequires:	pkgconfig, %{httpd_devel_pkg} >= 2.4.20, libnghttp2-devel >= 1.7.0
+# >= 2.4.48 is a real upstream requirement (not just this org's minimum) --
+# this module's h2_c1.c/h2_c1_io.c #include <http_ssl.h>, a header Apache
+# httpd only started shipping in httpd-devel at 2.4.48. RHEL/AlmaLinux 8's
+# httpd-devel (2.4.37) predates that, so mod_http2 cannot build there; this
+# version pin turns that into a clean "nothing provides" dependency failure
+# on el8 instead of a fatal-error mid-compile.
+BuildRequires:	gcc, make, pkgconfig, %{httpd_devel_pkg} >= 2.4.48, libnghttp2-devel >= 1.7.0, %{openssl_devel_pkg}
 Requires:	httpd-mmn = %{_httpd_mmn}, libnghttp2 >= 1.21.1
 Conflicts:      %{httpd_pkg} < 2.4.25-8
 
@@ -36,17 +44,18 @@ top of libnghttp2 for httpd 2.4 servers.
 %autosetup -p1
 
 %build
+%configure
 %make_build V=1
 
 %install
 %make_install
 rm -rf %{buildroot}/etc/httpd/share/doc/
 
-# remove links and rename SO files
-rm -r %{buildroot}%{_httpd_moddir}/mod_http2.so
-rm -r %{buildroot}%{_httpd_moddir}/mod_proxy_http2.so
-mv %{buildroot}%{_httpd_moddir}/mod_http2.so.0.0.0 %{buildroot}%{_httpd_moddir}/mod_http2.so
-mv %{buildroot}%{_httpd_moddir}/mod_proxy_http2.so.0.0.0 %{buildroot}%{_httpd_moddir}/mod_proxy_http2.so
+# NOTE: upstream's own libtool install already places mod_http2.so and
+# mod_proxy_http2.so directly under %{_httpd_moddir} with no .N.N.N
+# soname suffix (unlike a standard versioned shared library) -- an
+# earlier revision of this spec assumed a rm+mv rename step here, which
+# broke %%install once upstream stopped emitting the .0.0.0 suffix.
 
 # create configuration
 mkdir -p %{buildroot}%{_httpd_modconfdir}
