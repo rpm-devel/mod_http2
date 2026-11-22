@@ -1,26 +1,31 @@
-# SUSE/openSUSE ship the Apache HTTP Server dev package as apache2-devel
-# (providing httpd) instead of RHEL/Fedora's httpd-devel (providing httpd).
-# NOTE: apache2-devel does not provide the %%{_httpd_moddir}/%%{_httpd_modconfdir}/
-# %%{_httpd_mmn} RPM macros used below (those come only from httpd-devel's
-# macros.httpd) -- this spec's %%install/%%files still require RHEL/Fedora's
-# httpd-devel macro namespace to build; the guard below only fixes package
-# naming for BuildRequires/Requires/Conflicts.
+# Apache package names and module paths differ between SUSE and RHEL/Fedora.
 %if 0%{?suse_version}
 %global httpd_devel_pkg apache2-devel
 %global httpd_pkg apache2
 %global openssl_devel_pkg libopenssl-devel
+%if 0%{?suse_version} >= 1600
+%global httpd_apxs %{_bindir}/apxs
+%else
+%global httpd_apxs %{_sbindir}/apxs2
+%endif
+%global httpd_moddir %{_libdir}/apache2
+%global httpd_modconfdir %{_sysconfdir}/apache2/conf.d
 %else
 %global httpd_devel_pkg httpd-devel
 %global httpd_pkg httpd
 %global openssl_devel_pkg openssl-devel
-%endif
-
-# Module Magic Number
+%{!?_httpd_apxs: %global _httpd_apxs %{_sbindir}/apxs}
+%global httpd_apxs %{_httpd_apxs}
+%{!?_httpd_moddir: %global _httpd_moddir %{_libdir}/httpd/modules}
+%{!?_httpd_modconfdir: %global _httpd_modconfdir %{_sysconfdir}/httpd/conf.d}
+%global httpd_moddir %{_httpd_moddir}
+%global httpd_modconfdir %{_httpd_modconfdir}
 %{!?_httpd_mmn: %global _httpd_mmn %(cat %{_includedir}/httpd/.mmn 2>/dev/null || echo 0-0)}
+%endif
 
 Name:		mod_http2
 Version:	2.0.42
-Release:	1%{?dist}
+Release:	5%{?dist}
 Summary:	module implementing HTTP/2 for Apache 2
 License:	Apache-2.0
 URL:		https://icing.github.io/mod_h2/
@@ -29,12 +34,17 @@ Source0:	https://github.com/icing/mod_h2/releases/download/v%{version}/mod_http2
 # >= 2.4.48 is a real upstream requirement (not just this org's minimum) --
 # this module's h2_c1.c/h2_c1_io.c #include <http_ssl.h>, a header Apache
 # httpd only started shipping in httpd-devel at 2.4.48. RHEL/AlmaLinux 8's
-# httpd-devel (2.4.37) predates that, so mod_http2 cannot build there; this
-# version pin turns that into a clean "nothing provides" dependency failure
-# on el8 instead of a fatal-error mid-compile.
+# httpd-devel (2.4.37) predates that; EL7/8 are rejected explicitly instead of
+# reaching a fatal compile error.
+%if 0%{?rhel} && 0%{?rhel} <= 8
+%{error:mod_http2 2.0.42 requires Apache httpd >= 2.4.48; EL7/8 ship older versions}
+%endif
 BuildRequires:	gcc, make, pkgconfig, %{httpd_devel_pkg} >= 2.4.48, libnghttp2-devel >= 1.7.0, %{openssl_devel_pkg}
-Requires:	httpd-mmn = %{_httpd_mmn}, libnghttp2 >= 1.21.1
-Conflicts:      %{httpd_pkg} < 2.4.25-8
+Requires:       %{httpd_pkg} >= 2.4.48
+%if !0%{?suse_version}
+Requires:       httpd-mmn = %{_httpd_mmn}
+%endif
+Requires:       libnghttp2 >= 1.21.1
 
 %description
 The mod_h2 Apache httpd module implements the HTTP2 protocol (h2+h2c) on
@@ -44,23 +54,24 @@ top of libnghttp2 for httpd 2.4 servers.
 %autosetup -p1
 
 %build
-%configure
+%configure --with-apxs=%{httpd_apxs}
 %make_build V=1
 
 %install
 %make_install
-rm -rf %{buildroot}/etc/httpd/share/doc/
+httpd_prefix=$(%{httpd_apxs} -q PREFIX)
+rm -rf %{buildroot}${httpd_prefix}/share/doc/%{name}
 
 # NOTE: upstream's own libtool install already places mod_http2.so and
-# mod_proxy_http2.so directly under %{_httpd_moddir} with no .N.N.N
+# mod_proxy_http2.so directly under %{httpd_moddir} with no .N.N.N
 # soname suffix (unlike a standard versioned shared library) -- an
 # earlier revision of this spec assumed a rm+mv rename step here, which
 # broke %%install once upstream stopped emitting the .0.0.0 suffix.
 
 # create configuration
-mkdir -p %{buildroot}%{_httpd_modconfdir}
-echo "LoadModule http2_module modules/mod_http2.so" > %{buildroot}%{_httpd_modconfdir}/10-h2.conf
-echo "LoadModule proxy_http2_module modules/mod_proxy_http2.so" > %{buildroot}%{_httpd_modconfdir}/10-proxy_h2.conf
+mkdir -p %{buildroot}%{httpd_modconfdir}
+echo "LoadModule http2_module %{httpd_moddir}/mod_http2.so" > %{buildroot}%{httpd_modconfdir}/10-h2.conf
+echo "LoadModule proxy_http2_module %{httpd_moddir}/mod_proxy_http2.so" > %{buildroot}%{httpd_modconfdir}/10-proxy_h2.conf
 
 %check
 make check
@@ -68,20 +79,34 @@ make check
 %files
 %doc README README.md ChangeLog AUTHORS
 %license LICENSE
-%config(noreplace) %{_httpd_modconfdir}/10-h2.conf
-%config(noreplace) %{_httpd_modconfdir}/10-proxy_h2.conf
-%{_httpd_moddir}/mod_http2.so
-%{_httpd_moddir}/mod_proxy_http2.so
+%config(noreplace) %{httpd_modconfdir}/10-h2.conf
+%config(noreplace) %{httpd_modconfdir}/10-proxy_h2.conf
+%{httpd_moddir}/mod_http2.so
+%{httpd_moddir}/mod_proxy_http2.so
 
 %changelog
-* Sat Jul 05 2026 CasjaysDev <rpm-devel@casjaysdev.pro> - 2.0.42-1
+* Thu Oct 01 2026 CasjaysDev <rpm-devel@casjaysdev.pro> - 2.0.42-5
+- Make the Apache 2.4.48 minimum explicit for unsupported EL7/8 targets
+
+* Tue Sep 29 2026 CasjaysDev <rpm-devel@casjaysdev.pro> - 2.0.42-4
+- Remove upstream documentation from the Apache prefix after install
+
+* Tue Sep 29 2026 CasjaysDev <rpm-devel@casjaysdev.pro> - 2.0.42-3
+- Use distro Apache apxs paths for Leap 16, Tumbleweed, and EL10
+
+* Mon Sep 28 2026 CasjaysDev <rpm-devel@casjaysdev.pro> - 2.0.42-2
+- Complete SUSE Apache package, apxs, module path, config path, and runtime
+  dependency handling; keep the RHEL/Fedora module magic number dependency
+- Configure with the distro-specific apxs and use absolute module paths
+
+* Sun Jul 05 2026 CasjaysDev <rpm-devel@casjaysdev.pro> - 2.0.42-1
 - Multi-distro pass: guard httpd-devel/apache2-devel and httpd/apache2
   (BuildRequires, Conflicts) behind 0%%{?suse_version} for openSUSE/SLES;
   RHEL/CentOS 7+, Alma/Rocky/Oracle 8+, Fedora 40+ keep httpd-devel/httpd
 - ExclusiveArch already present, no noarch/BuildArch lines found; verified
   libnghttp2-devel is the correct package name on both Fedora and openSUSE
   (no divergence, left unguarded)
-- NOTE: %%install/%%files still rely on %%{_httpd_moddir}/%%{_httpd_modconfdir}/
+- NOTE: %%install/%%files still rely on %%{httpd_moddir}/%%{httpd_modconfdir}/
   %%{_httpd_mmn} macros, which only httpd-devel's macros.httpd provides;
   openSUSE's apache2-devel uses a different macro namespace (%%apache_*), so
   this package still will not fully build on SUSE without a macro rewrite
@@ -89,7 +114,7 @@ make check
 - Update to 2.0.42 (Source0 verified 302→200)
 - Remove stale commented-out OpenSSL path hacks from %%build
 
-* Thu Jul 03 2026 CasjaysDev <rpm-devel@casjaysdev.pro> - 2.0.39-1
+* Fri Jul 03 2026 CasjaysDev <rpm-devel@casjaysdev.pro> - 2.0.39-1
 - SPDX: ASL 2.0 → Apache-2.0; add ExclusiveArch: x86_64 aarch64
 - %%autosetup -p1, %%make_build V=1, %%make_install
 
